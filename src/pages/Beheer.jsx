@@ -6,11 +6,15 @@ import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import WerkmomentForm from "../components/WerkmomentForm";
 
-const STATUS_LABELS = { draft: "Concept", final: "Definitief", reviewed: "Nagekeken" };
+const STATUS_LABELS = {
+  not_invoiced: "Nog niet gefactureerd",
+  pending_invoice: "Factuur aangevraagd / in opmaak",
+  invoiced: "Gefactureerd",
+};
 const STATUS_COLORS = {
-  draft: "bg-yellow-100 text-yellow-800",
-  final: "bg-blue-100 text-blue-800",
-  reviewed: "bg-green-100 text-green-800",
+  not_invoiced: "bg-orange-100 text-orange-800",
+  pending_invoice: "bg-blue-100 text-blue-800",
+  invoiced: "bg-green-100 text-green-800",
 };
 
 function formatDuur(min) {
@@ -117,9 +121,15 @@ export default function Beheer() {
             <tbody className="divide-y divide-gray-100">
               {logs.map((log) => (
                 <tr key={log.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 whitespace-nowrap font-medium">{log.date}</td>
+                  <td className="px-4 py-3 whitespace-nowrap font-medium">
+                    {log.entryType === "period"
+                      ? <><div>{log.dateFrom}</div><div className="text-xs text-gray-400">t/m {log.dateTo}</div></>
+                      : log.date}
+                  </td>
                   <td className="px-4 py-3 whitespace-nowrap text-gray-600">
-                    <div>{log.startTime} – {log.endTime}</div>
+                    {log.entryType === "period"
+                      ? <span className="text-xs italic text-gray-400">periode</span>
+                      : <div>{log.startTime} – {log.endTime}</div>}
                     <div className="text-blue-600 font-medium">{formatDuur(log.durationMinutes)}</div>
                   </td>
                   <td className="px-4 py-3">
@@ -131,10 +141,9 @@ export default function Beheer() {
                     {log.description && <div className="text-gray-400 text-xs mt-0.5 line-clamp-1">{log.description}</div>}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_COLORS[log.status] || "bg-gray-100 text-gray-700"}`}>
-                      {STATUS_LABELS[log.status] || log.status}
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_COLORS[log.status] || STATUS_COLORS.not_invoiced}`}>
+                      {STATUS_LABELS[log.status] || STATUS_LABELS.not_invoiced}
                     </span>
-                    {log.validated && <div className="text-xs text-green-600 mt-1">✓ Gevalideerd</div>}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-3">

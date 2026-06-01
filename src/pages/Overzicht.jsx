@@ -2,11 +2,15 @@ import { useEffect, useState } from "react";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "../firebase/config";
 
-const STATUS_LABELS = { draft: "Concept", final: "Definitief", reviewed: "Nagekeken" };
+const STATUS_LABELS = {
+  not_invoiced: "Nog niet gefactureerd",
+  pending_invoice: "Factuur aangevraagd / in opmaak",
+  invoiced: "Gefactureerd",
+};
 const STATUS_COLORS = {
-  draft: "bg-yellow-100 text-yellow-800",
-  final: "bg-blue-100 text-blue-800",
-  reviewed: "bg-green-100 text-green-800",
+  not_invoiced: "bg-orange-100 text-orange-800",
+  pending_invoice: "bg-blue-100 text-blue-800",
+  invoiced: "bg-green-100 text-green-800",
 };
 
 function formatDuur(minuten) {
@@ -70,9 +74,9 @@ export default function Overzicht() {
             className="border border-gray-300 rounded px-3 py-1.5 text-sm bg-white"
           >
             <option value="">Alle statussen</option>
-            <option value="draft">Concept</option>
-            <option value="final">Definitief</option>
-            <option value="reviewed">Nagekeken</option>
+            <option value="not_invoiced">Nog niet gefactureerd</option>
+            <option value="pending_invoice">Factuur aangevraagd / in opmaak</option>
+            <option value="invoiced">Gefactureerd</option>
           </select>
         </div>
         <div>
@@ -125,9 +129,17 @@ export default function Overzicht() {
             <tbody className="divide-y divide-gray-100">
               {gefilterd.map((log) => (
                 <tr key={log.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 whitespace-nowrap font-medium">{log.date}</td>
-                  <td className="px-4 py-3 whitespace-nowrap text-gray-600">{log.startTime}</td>
-                  <td className="px-4 py-3 whitespace-nowrap text-gray-600">{log.endTime}</td>
+                  <td className="px-4 py-3 whitespace-nowrap font-medium">
+                    {log.entryType === "period"
+                      ? <><div>{log.dateFrom}</div><div className="text-xs text-gray-400">t/m {log.dateTo}</div></>
+                      : log.date}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-gray-600">
+                    {log.entryType === "period" ? <span className="text-xs italic text-gray-400">periode</span> : log.startTime}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-gray-600">
+                    {log.entryType === "period" ? "" : log.endTime}
+                  </td>
                   <td className="px-4 py-3 whitespace-nowrap font-medium text-blue-700">{formatDuur(log.durationMinutes)}</td>
                   <td className="px-4 py-3">
                     <div className="font-medium">{log.project}</div>
@@ -165,12 +177,9 @@ export default function Overzicht() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_COLORS[log.status] || "bg-gray-100 text-gray-700"}`}>
-                      {STATUS_LABELS[log.status] || log.status}
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_COLORS[log.status] || STATUS_COLORS.not_invoiced}`}>
+                      {STATUS_LABELS[log.status] || STATUS_LABELS.not_invoiced}
                     </span>
-                    {log.validated && (
-                      <div className="text-xs text-green-600 mt-1">✓ Nagekeken</div>
-                    )}
                   </td>
                 </tr>
               ))}

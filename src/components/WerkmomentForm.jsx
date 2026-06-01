@@ -3,9 +3,14 @@ import { collection, addDoc, updateDoc, doc, serverTimestamp } from "firebase/fi
 import { db } from "../firebase/config";
 
 const LEEG_FORM = {
+  entryType: "specific",
   date: new Date().toISOString().split("T")[0],
   startTime: "09:00",
   endTime: "10:00",
+  dateFrom: new Date().toISOString().split("T")[0],
+  dateTo: new Date().toISOString().split("T")[0],
+  customHours: "",
+  customMinutes: "0",
   client: "",
   project: "",
   appName: "",
@@ -18,8 +23,7 @@ const LEEG_FORM = {
   externalType: "",
   externalLabel: "",
   externalUrl: "",
-  status: "draft",
-  validated: false,
+  status: "not_invoiced",
 };
 
 function berekenDuur(start, einde) {
@@ -29,7 +33,7 @@ function berekenDuur(start, einde) {
 }
 
 function formatDuur(min) {
-  if (min <= 0) return null;
+  if (!min || min <= 0) return null;
   return `${Math.floor(min / 60)}u ${String(min % 60).padStart(2, "0")}m`;
 }
 
@@ -40,10 +44,16 @@ export default function WerkmomentForm({ log, onClose, userId }) {
 
   useEffect(() => {
     if (log) {
+      const isPeriod = log.entryType === "period";
       setForm({
+        entryType: log.entryType || "specific",
         date: log.date || "",
         startTime: log.startTime || "",
         endTime: log.endTime || "",
+        dateFrom: log.dateFrom || log.date || "",
+        dateTo: log.dateTo || log.date || "",
+        customHours: isPeriod ? String(Math.floor((log.durationMinutes || 0) / 60)) : "",
+        customMinutes: isPeriod ? String((log.durationMinutes || 0) % 60) : "0",
         client: log.client || "",
         project: log.project || "",
         appName: log.appName || "",
@@ -56,8 +66,7 @@ export default function WerkmomentForm({ log, onClose, userId }) {
         externalType: log.externalReference?.type || "",
         externalLabel: log.externalReference?.label || "",
         externalUrl: log.externalReference?.url || "",
-        status: log.status || "draft",
-        validated: log.validated || false,
+        status: log.status || "not_invoiced",
       });
     }
   }, [log]);
@@ -71,22 +80,63 @@ export default function WerkmomentForm({ log, onClose, userId }) {
     e.preventDefault();
     setFout("");
 
-    const duur = berekenDuur(form.startTime, form.endTime);
-    if (duur <= 0) {
-      setFout("Het einduur moet na het startuur liggen.");
-      return;
+    const isPeriod = form.entryType === "period";
+    let duurMinuten;
+
+    if (isPeriod) {
+      const uren = parseInt(form.customHours) || 0;
+      const minuten = parseInt(form.customMinutes) || 0;
+      duurMinuten = uren * 60 + minuten;
+      if (duurMinuten <= 0) {
+        setFout("Geef een geldig totaal aantal uren in.");
+        return;
+      }
+      if (!form.dateFrom || !form.dateTo) {
+        setFout("Van-datum en tot-datum zijn verplicht.");
+        return;
+      }
+      if (form.dateTo < form.dateFrom) {
+        setFout("De einddatum moet na de startdatum liggen.");
+        return;
+      }
+    } else {
+      duurMinuten = berekenDuur(form.startTime, form.endTime);
+      if (duurMinuten <= 0) {
+        setFout("Het einduur moet na het startuur liggen.");
+        return;
+      }
+      if (!form.date) {
+        setFout("Datum is verplicht.");
+        return;
+      }
     }
-    if (!form.date || !form.project || !form.title) {
-      setFout("Datum, project en titel zijn verplicht.");
+
+    if (!form.project || !form.title) {
+      setFout("Project en titel zijn verplicht.");
       return;
     }
 
     setBezig(true);
-    const data = {
+
+    const data = isPeriod ? {
+      entryType: "period",
+      date: form.dateFrom,
+      dateFrom: form.dateFrom,
+      dateTo: form.dateTo,
+      startTime: "",
+      endTime: "",
+      durationMinutes: duurMinuten,
+    } : {
+      entryType: "specific",
       date: form.date,
+      dateFrom: "",
+      dateTo: "",
       startTime: form.startTime,
       endTime: form.endTime,
-      durationMinutes: duur,
+      durationMinutes: duurMinuten,
+    };
+
+    Object.assign(data, {
       client: form.client,
       project: form.project,
       appName: form.appName,
@@ -104,9 +154,8 @@ export default function WerkmomentForm({ log, onClose, userId }) {
         url: form.externalUrl,
       },
       status: form.status,
-      validated: form.validated,
       updatedAt: serverTimestamp(),
-    };
+    });
 
     try {
       if (log) {
@@ -126,8 +175,9 @@ export default function WerkmomentForm({ log, onClose, userId }) {
     }
   }
 
-  const duur = berekenDuur(form.startTime, form.endTime);
-  const duurTekst = formatDuur(duur);
+  const isPeriod = form.entryType === "period";
+  const duurSpecifiek = !isPeriod ? berekenDuur(form.startTime, form.endTime) : 0;
+  const duurPeriode = isPeriod ? (parseInt(form.customHours) || 0) * 60 + (parseInt(form.customMinutes) || 0) : 0;
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-start justify-center z-50 p-4 overflow-y-auto">
@@ -149,31 +199,92 @@ export default function WerkmomentForm({ log, onClose, userId }) {
             </div>
           )}
 
+          {/* Type invoer */}
+          <div>
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Type invoer</h3>
+            <div className="flex gap-3">
+              <label className={`flex-1 flex items-center gap-2 border-2 rounded-lg px-4 py-3 cursor-pointer transition-colors ${!isPeriod ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-300"}`}>
+                <input type="radio" name="entryType" value="specific" checked={!isPeriod} onChange={handleChange} className="accent-blue-600" />
+                <div>
+                  <div className="text-sm font-medium text-gray-800">Specifiek tijdstip</div>
+                  <div className="text-xs text-gray-500">Datum, startuur en einduur</div>
+                </div>
+              </label>
+              <label className={`flex-1 flex items-center gap-2 border-2 rounded-lg px-4 py-3 cursor-pointer transition-colors ${isPeriod ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-300"}`}>
+                <input type="radio" name="entryType" value="period" checked={isPeriod} onChange={handleChange} className="accent-blue-600" />
+                <div>
+                  <div className="text-sm font-medium text-gray-800">Periode</div>
+                  <div className="text-xs text-gray-500">Van dag tot dag + totaal zelf ingeven</div>
+                </div>
+              </label>
+            </div>
+          </div>
+
           {/* Datum en tijd */}
           <div>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Datum en tijd</h3>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Datum <span className="text-red-500">*</span></label>
-                <input type="date" name="date" value={form.date} onChange={handleChange} required
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Startuur <span className="text-red-500">*</span></label>
-                <input type="time" name="startTime" value={form.startTime} onChange={handleChange} required
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Einduur <span className="text-red-500">*</span></label>
-                <input type="time" name="endTime" value={form.endTime} onChange={handleChange} required
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-            </div>
-            {duurTekst && (
-              <p className="text-sm text-blue-600 mt-2">Totale duur: <strong>{duurTekst}</strong></p>
-            )}
-            {duur <= 0 && form.startTime && form.endTime && (
-              <p className="text-sm text-red-500 mt-2">Einduur ligt voor startuur.</p>
+
+            {!isPeriod ? (
+              <>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Datum <span className="text-red-500">*</span></label>
+                    <input type="date" name="date" value={form.date} onChange={handleChange} required
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Startuur <span className="text-red-500">*</span></label>
+                    <input type="time" name="startTime" value={form.startTime} onChange={handleChange} required
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Einduur <span className="text-red-500">*</span></label>
+                    <input type="time" name="endTime" value={form.endTime} onChange={handleChange} required
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </div>
+                {duurSpecifiek > 0 && (
+                  <p className="text-sm text-blue-600 mt-2">Totale duur: <strong>{formatDuur(duurSpecifiek)}</strong></p>
+                )}
+                {duurSpecifiek <= 0 && form.startTime && form.endTime && (
+                  <p className="text-sm text-red-500 mt-2">Einduur ligt voor startuur.</p>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Van datum <span className="text-red-500">*</span></label>
+                    <input type="date" name="dateFrom" value={form.dateFrom} onChange={handleChange} required
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tot datum <span className="text-red-500">*</span></label>
+                    <input type="date" name="dateTo" value={form.dateTo} onChange={handleChange} required
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Totaal aantal uren <span className="text-red-500">*</span></label>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <input type="number" name="customHours" value={form.customHours} onChange={handleChange}
+                        min="0" max="9999" placeholder="0"
+                        className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-center" />
+                      <span className="text-sm text-gray-600">uren</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input type="number" name="customMinutes" value={form.customMinutes} onChange={handleChange}
+                        min="0" max="59" placeholder="0"
+                        className="w-20 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-center" />
+                      <span className="text-sm text-gray-600">minuten</span>
+                    </div>
+                    {duurPeriode > 0 && (
+                      <span className="text-sm text-blue-600 font-medium">= {formatDuur(duurPeriode)}</span>
+                    )}
+                  </div>
+                </div>
+              </>
             )}
           </div>
 
@@ -253,8 +364,7 @@ export default function WerkmomentForm({ log, onClose, userId }) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Tekst uit logboek</label>
               <textarea name="logbookText" value={form.logbookText} onChange={handleChange}
-                rows={6}
-                placeholder="Plak hier de relevante tekst uit je logboek..."
+                rows={6} placeholder="Plak hier de relevante tekst uit je logboek..."
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y font-mono" />
             </div>
           </div>
@@ -292,24 +402,12 @@ export default function WerkmomentForm({ log, onClose, userId }) {
           {/* Status */}
           <div>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Status</h3>
-            <div className="grid grid-cols-2 gap-3 items-end">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                <select name="status" value={form.status} onChange={handleChange}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="draft">Concept</option>
-                  <option value="final">Definitief</option>
-                  <option value="reviewed">Nagekeken</option>
-                </select>
-              </div>
-              <div>
-                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer pb-2">
-                  <input type="checkbox" name="validated" checked={form.validated} onChange={handleChange}
-                    className="w-4 h-4 rounded" />
-                  Gevalideerd / nagekeken
-                </label>
-              </div>
-            </div>
+            <select name="status" value={form.status} onChange={handleChange}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="not_invoiced">Nog niet gefactureerd</option>
+              <option value="pending_invoice">Factuur aangevraagd / in opmaak</option>
+              <option value="invoiced">Gefactureerd</option>
+            </select>
           </div>
 
           {/* Knoppen */}
