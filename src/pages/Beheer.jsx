@@ -5,6 +5,7 @@ import { db, auth } from "../firebase/config";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import WerkmomentForm from "../components/WerkmomentForm";
+import { exporteerWerkmomenten } from "../utils/excelExport";
 
 const STATUS_LABELS = {
   not_invoiced: "Nog niet gefactureerd",
@@ -29,6 +30,8 @@ export default function Beheer() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editLog, setEditLog] = useState(null);
+  const [exportBezig, setExportBezig] = useState(false);
+  const [exportFout, setExportFout] = useState("");
 
   useEffect(() => {
     if (user === null) navigate("/login");
@@ -64,6 +67,22 @@ export default function Beheer() {
     setEditLog(null);
   }
 
+  async function handleExport() {
+    setExportFout("");
+    if (logs.length === 0) {
+      setExportFout("Er zijn nog geen werkmomenten om te exporteren.");
+      return;
+    }
+    setExportBezig(true);
+    try {
+      await exporteerWerkmomenten(logs);
+    } catch {
+      setExportFout("Het Excel-bestand kon niet aangemaakt worden. Probeer opnieuw.");
+    } finally {
+      setExportBezig(false);
+    }
+  }
+
   async function handleUitloggen() {
     await signOut(auth);
     navigate("/");
@@ -85,12 +104,23 @@ export default function Beheer() {
             className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 text-sm">
             + Nieuw werkmoment
           </button>
+          <button onClick={handleExport} disabled={exportBezig || loading || logs.length === 0}
+            title="Exporteer alle werkmomenten naar een Excel-bestand"
+            className="bg-green-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:hover:bg-green-600 text-sm">
+            {exportBezig ? "Exporteren..." : `Excel-export (${logs.length})`}
+          </button>
           <button onClick={handleUitloggen}
             className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-medium hover:bg-gray-200 text-sm">
             Uitloggen
           </button>
         </div>
       </div>
+
+      {exportFout && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 mb-4">
+          {exportFout}
+        </div>
+      )}
 
       {/* Formulier (modal) */}
       {showForm && (

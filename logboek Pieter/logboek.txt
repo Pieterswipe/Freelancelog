@@ -1,0 +1,131 @@
+================================================================================
+LOGBOEK FREELANCELOG -- Pieter
+================================================================================
+
+Dit is het projectlogboek van deze repo. Het hoort bij de code, gaat mee in git en
+reist zo mee naar elke pc waarop ik werk.
+
+Werkwijze:
+  * Dit bestand is APPEND-ONLY. Er wordt nooit iets herschreven, herordend of
+    opgeschoond. Er verdwijnen nooit regels. Er komt alleen onderaan iets bij.
+  * Een latere entry corrigeert een eerdere. De fout blijft staan -- de
+    geschiedenis is juist het punt.
+  * Nieuwste items staan dus ONDERAAN.
+  * Elke entry heeft een kop met de datum, het volgnummer binnen die dag, het uur
+    en een titel. Het volgnummer haal ik uit het laatste blok in dit bestand,
+    nooit uit mijn hoofd.
+  * Aangevuld op vraag, en automatisch aan het einde van elke sessie.
+
+Dit staat los van de sessieverslagen in C:\Users\Admin\sessieverslagen Pieter\.
+Die beschrijven de sessie als geheel; dit bestand houdt de technische
+projectdetails bij.
+
+================================================================================
+
+
+################################################################################
+27 augustus 2026 (1) 23:52 -- Excel-export van alle werkmomenten
+################################################################################
+
+  AANLEIDING
+  Ik wou als beheerder een knop waarmee ik in een keer alle werkmomenten kan
+  exporteren naar Excel. Tot nu toe stond alles enkel in de tabel op het scherm;
+  om iets bij een factuur te voegen of om zelf te rekenen moest ik overtypen.
+
+  AANPAK
+  Een nieuwe module src/utils/excelExport.js die een echt .xlsx-bestand opbouwt
+  met SheetJS, plus een knop op de beheerpagina die de volledige logs-array
+  doorgeeft. Het bestand krijgt twee werkbladen:
+
+    * "Werkmomenten" -- een rij per werkmoment, 23 kolommen, met alles wat in het
+      invoerformulier zit: klant, project, app/onderdeel, type werk, titel,
+      beschrijving, status, logboekverwijzing (sectie/URL/tekst) en externe
+      verwijzing (type/label/URL). Autofilter op de kopregel, kolombreedtes
+      ingesteld.
+    * "Samenvatting" -- totaal aantal en totale duur, plus een uitsplitsing per
+      project en per status.
+
+  BESLISSINGEN
+  * Datums gaan als ECHTE Excel-datums naar het bestand (celformaat dd/mm/yyyy),
+    niet als tekst. Anders kan ik in Excel niet sorteren of op periode filteren.
+  * De duur staat er twee keer in: leesbaar ("3u 30m") en als decimaal getal
+    (3,50). Dat tweede heb ik nodig om te vermenigvuldigen met een uurtarief.
+  * Periodes en specifieke tijdstippen krijgen elk hun eigen kolommen (Van /
+    Tot en met tegenover Startuur / Einduur), met een kolom "Type invoer" ervoor
+    zodat meteen duidelijk is welke soort rij het is.
+  * Export is gesorteerd op datum OPLOPEND (oudste eerst), terwijl de
+    beheertabel aflopend sorteert. Als bijlage bij een factuur leest oud->nieuw
+    nu eenmaal logischer.
+  * SheetJS is geinstalleerd vanaf https://cdn.sheetjs.com/xlsx-0.20.3/ en NIET
+    als het npm-pakket "xlsx". Dat npm-pakket staat al jaren stil op 0.18.5 en
+    heeft bekende kwetsbaarheden; de makers publiceren zelf enkel nog op hun
+    eigen CDN. In package.json staat daardoor een tarball-URL in plaats van een
+    versienummer -- dat ziet er ongewoon uit maar is bewust. npm install werkt
+    gewoon zoals altijd.
+  * De import van SheetJS is DYNAMISCH (await import in de exportfunctie). Met
+    een gewone import groeide de bundel van ~455 kB naar 948 kB, ook voor
+    bezoekers van de publieke overzichtspagina die nooit exporteren. Nu zit
+    SheetJS in een aparte chunk van 493 kB die alleen de beheerder ophaalt.
+
+  VERIFICATIE
+  Ik heb de export niet enkel gebouwd maar ook echt uitgevoerd en het resultaat
+  teruggelezen, met testdata die de drie gevallen dekt: een periode-invoer, een
+  specifiek tijdstip, en een minimaal ingevuld werkmoment. Gecontroleerd in het
+  weggeschreven bestand:
+    * Datums staan als hele dagen (serienummer 46235 = 01/08/2026). Geen
+      tijdzoneverschuiving. Let op: als je zo'n bestand terugleest met
+      cellDates:true lijkt het een dag verschoven (22:00 de dag ervoor) -- dat is
+      een leesartefact van SheetJS, niet iets wat in het bestand staat. Ik ben er
+      bijna ingetrapt; enkel door de RUWE serienummers te bekijken zag ik dat het
+      wel klopte.
+    * "Aangemaakt op" is een echte datum-tijdcel (25/08/2026 16:30), en de
+      Firestore-timestamp wordt correct omgezet, ook als hij nog null is bij een
+      pas aangemaakt record.
+    * "Uren (decimaal)" is een getal met celformaat 0.00.
+  npm run build slaagt, eslint is schoon op beide gewijzigde bestanden.
+
+  Wat ik NIET heb kunnen testen: de knop aanklikken in de draaiende app, want
+  daarvoor zijn Firebase-inloggegevens nodig. De exportlogica zelf is wel
+  end-to-end getest.
+
+  BESTANDEN
+  * src/utils/excelExport.js  -- NIEUW, de volledige exportmodule
+  * src/pages/Beheer.jsx      -- knop, exportBezig/exportFout state, handler
+  * package.json              -- xlsx via cdn.sheetjs.com
+  * package-lock.json         -- meegegroeid
+  * logboek Pieter/logboek.txt -- NIEUW, dit bestand
+  Commit-hash: zie de entry hieronder bij de volgende sessie, of git log --
+  deze entry is geschreven vlak voor de commit zelf.
+
+  NOG OPEN
+  * Er zit nog geen filter op de export: hij neemt altijd ALLE werkmomenten. Op
+    de overzichtspagina bestaan wel filters (project, status, periode). Als ik
+    ooit per klant of per maand wil exporteren, is de logischste stap dezelfde
+    knop op Overzicht zetten en daar de gefilterde lijst doorgeven -- de
+    exportfunctie zelf hoeft daar niet voor te veranderen.
+  * npm audit meldt 8 kwetsbaarheden. Die komen allemaal uit bestaande
+    dependencies (vite, react-router, postcss, nanoid), niet uit SheetJS. Nog
+    eens bekijken bij een volgende opkuis.
+  * Twee eslint-fouten die er al stonden en die ik bewust heb laten liggen omdat
+    ze buiten deze opdracht vielen: setState in een effect in WerkmomentForm.jsx
+    en een fast-refresh-waarschuwing in AuthContext.jsx.
+
+WAT IK GELEERD HEB
+  * Een round-trip test kan LIEGEN. Het teruglezen van mijn eigen xlsx toonde
+    datums die een dag verschoven leken. Het bestand was correct; de leesoptie
+    cellDates:true was het probleem. De les: als een verificatie iets vreemds
+    toont, eerst nagaan of het meetinstrument klopt voor ik de code "repareer" --
+    anders had ik een bug ingebouwd om een niet-bestaande bug op te lossen.
+  * Het npm-pakket "xlsx" is NIET de plek waar SheetJS nog gepubliceerd wordt.
+    Wie gewoon npm install xlsx doet, krijgt een versie van jaren geleden met
+    openstaande kwetsbaarheden. De officiele weg loopt via hun eigen CDN.
+  * Een dynamische import is hier geen micro-optimalisatie maar het verschil
+    tussen wel of niet een halve megabyte opdringen aan iedere bezoeker van de
+    publieke pagina. De kost van een library hoort bij wie hem gebruikt.
+  * Uren twee keer exporteren (leesbaar en decimaal) lijkt dubbelop, maar het is
+    precies het verschil tussen een tabel die je LEEST en een tabel waarmee je
+    REKENT. Een export moet allebei kunnen.
+
+################################################################################
+EINDE 27 augustus 2026 (1) -- Excel-export gebouwd, getest en gepusht
+################################################################################
