@@ -129,3 +129,160 @@ WAT IK GELEERD HEB
 ################################################################################
 EINDE 27 augustus 2026 (1) -- Excel-export gebouwd, getest en gepusht
 ################################################################################
+
+################################################################################
+28 augustus 2026 (1) 00:00 -- Deploy naar Firebase Hosting; ontbrekende .env
+################################################################################
+
+  AANLEIDING
+  Ik vroeg of Firebase de app nu kon deployen, meteen na het pushen van de
+  Excel-export.
+
+  BEVINDING -- DE BUILD WAS STIL KAPOT
+  Het antwoord was eerst NEE, en om een reden die ik niet zag aankomen: er stond
+  helemaal geen .env in de repo. src/firebase/config.js haalt alle sleutels uit
+  import.meta.env.VITE_FIREBASE_*, en zonder .env vult Vite die in als undefined.
+  Het vervelende: npm run build SLAAGT gewoon. Geen fout, geen waarschuwing. Ik
+  had die build eerder op de avond nog als "geslaagd" gerapporteerd bij de
+  Excel-export. Dat klopte technisch, maar de dist die eruit kwam was onbruikbaar:
+  Firebase kon niet initialiseren, dus geen login en geen data.
+
+  Vastgesteld door in de gebouwde bundel te zoeken naar "AIza" -- dat leverde
+  False op. Geen enkele echte sleutel in het bestand.
+
+  AANPAK
+  De Firebase CLI bleek wel ingelogd, en er was al een hosting-site:
+  freelance-ldp-group.web.app, met App ID 1:256320351905:web:b6d9ab43c6c544a4454ae0.
+  Daarmee kon ik de volledige webconfig gewoon bij Firebase zelf opvragen:
+
+    firebase apps:sdkconfig WEB <appId> --project freelance-ldp-group
+
+  Die zes waarden in een nieuwe .env gezet (staat in .gitignore, dus blijft
+  lokaal), opnieuw gebouwd, en toen zaten apiKey, authDomain en appId wel in de
+  bundel. Ook een .firebaserc aangemaakt zodat "firebase deploy" voortaan weet
+  naar welk project hij moet, zonder --project erbij.
+
+  BESLISSING -- ALLEEN HOSTING DEPLOYEN
+  "firebase deploy" zonder vlaggen deployt OOK firestore.rules en overschrijft
+  daarmee de live beveiligingsregels. Dat wou ik niet blind doen, dus bewust
+  gekozen voor --only hosting. De regels in productie zijn ongemoeid gebleven.
+
+  VERIFICATIE
+  Niet enkel "Deploy complete" geloofd, maar de live site opgehaald en
+  gecontroleerd:
+    * index.html verwijst naar de nieuwe bundel index-kQVnYbTQ.js
+    * die bundel bevat de Firebase-config
+    * hij bevat de tekst "Excel-export"
+    * de xlsx-chunk wordt lui geladen, dus niet meegestuurd naar bezoekers van
+      de publieke overzichtspagina
+
+  BESTANDEN
+  * .env         -- NIEUW, lokaal, gitignored, zes VITE_FIREBASE_-waarden
+  * .firebaserc  -- NIEUW, koppelt de repo aan project freelance-ldp-group
+  Live op https://freelance-ldp-group.web.app
+
+  NOG OPEN
+  * Er staat nergens gedocumenteerd WELKE variabelen .env moet bevatten. Op een
+    nieuwe pc loop ik precies tegen hetzelfde stille probleem aan. Een
+    .env.example in git zou dat oplossen.
+  * De Firestore-regels laten iedereen alle workLogs lezen (allow read: if true).
+    Dat is bewust, want de overzichtspagina is publiek. Maar besef wel: klantnamen,
+    beschrijvingen en de volledige logboekteksten die ik nu ook exporteer, zijn
+    daarmee voor iedereen opvraagbaar via de Firestore-API. Eens over nadenken.
+  * Git staat niet in PATH op deze pc. Ik heb de git gebruikt die in GitHub
+    Desktop zit. Werkt, maar dat pad bevat het versienummer (app-3.6.4) en breekt
+    dus bij een update van GitHub Desktop.
+
+WAT IK GELEERD HEB
+  * Een geslaagde build bewijst NIETS over een werkende app. Vite vult ontbrekende
+    env-variabelen in als undefined en zwijgt erover. "npm run build is groen" is
+    dus geen bewijs dat er iets bruikbaars uitkwam -- ik moet in het artefact zelf
+    kijken of wat ik verwacht er ook echt in staat.
+  * Als de config ergens zoek is: Firebase heeft hem zelf nog. apps:sdkconfig
+    haalt de volledige webconfig op uit het project. Ik hoefde niets terug te
+    zoeken in de console of ergens over te typen.
+  * "firebase deploy" is breder dan het lijkt. Zonder --only gaan de
+    beveiligingsregels mee. Bij hosting die je vaak deployt en regels die je
+    zelden aanraakt, wil je die twee niet aan elkaar koppelen.
+  * Deployen is pas af als je de LIVE site hebt bekeken. "Deploy complete" zegt
+    dat de upload lukte, niet dat het juiste erin zit.
+
+################################################################################
+EINDE 28 augustus 2026 (1) -- App live, ontbrekende .env hersteld
+################################################################################
+
+################################################################################
+28 augustus 2026 (2) 00:30 -- Excel-export brak op mijn eigen logboekteksten
+################################################################################
+
+  AANLEIDING
+  Meteen na de deploy probeerde ik de exportknop en kreeg ik "het Excel bestand
+  kon niet aangemaakt worden". De knop werkte dus niet in de praktijk, terwijl
+  ik hem een uur eerder als getest had afgevinkt.
+
+  DE ECHTE OORZAAK
+  Excel staat maximaal 32.767 tekens per cel toe. SheetJS gooit daarboven een
+  harde fout: "Text length must not exceed 32767 characters" (xlsx.mjs regel
+  16151). In mijn data zitten 18 van de 56 werkmomenten met een
+  logbookReference.text die daar ruim boven gaat -- de langste is 103.660 tekens.
+  Dat veld is nu net bedoeld om lappen logboektekst in te plakken, dus dit was
+  geen randgeval maar het normale gebruik.
+
+  WAAROM IK HET NIET ZAG
+  Ik had de export wel end-to-end getest, maar met verzonnen testdata waarin
+  logbookReference.text de tekst "lange tekst" bevatte. Elf tekens. Mijn test
+  dekte de STRUCTUUR van de data perfect en de SCHAAL ervan totaal niet.
+
+  HOE IK HET GEVONDEN HEB
+  Eerst een paar verkeerde sporen uitgesloten door te kijken in plaats van te
+  gokken: de gebouwde chunk exporteert wel degelijk utils en writeFile, en beide
+  chunks zijn live bereikbaar met het juiste content-type. Toen bedacht ik dat
+  de Firestore-regels workLogs publiek leesbaar maken -- dus kon ik mijn echte 56
+  documenten gewoon via de REST API ophalen en de exportfunctie er lokaal op
+  draaien. Daar viel het meteen om, met de echte foutboodschap erbij.
+
+  AANPAK
+  * beperkTekst() kapt elke celwaarde boven 32.767 tekens af en zet ONDERAAN DE
+    CEL ZELF hoeveel tekens het origineel had. Zo zie je in Excel dat er iets
+    ontbreekt in plaats van stilzwijgend een halve tekst te krijgen.
+  * Toegepast via .map(beperkTekst) op de hele rij: strings worden ingekort,
+    datums en getallen blijven ongemoeid.
+  * De catch in Beheer.jsx toonde een generieke melding en logde niets. Die
+    toont nu de echte foutboodschap en doet console.error.
+
+  VERIFICATIE
+  Export gedraaid op alle 56 echte werkmomenten: slaagt, 56 rijen, GEEN ENKELE
+  cel boven de limiet, 19 cellen afgekapt (18 logboekteksten plus een lange
+  beschrijving). Totaal 327u 55m. Bestand is 1,6 MB en laat zich terug inlezen.
+  Daarna gedeployd en op de live site gecontroleerd dat de nieuwe bundel
+  (index-DdI4SBEL.js) de afkaplogica en de echte foutmelding bevat.
+
+  BESTANDEN
+  * src/utils/excelExport.js -- MAX_CELTEKST, beperkTekst(), .map() in maakRij
+  * src/pages/Beheer.jsx     -- catch toont de echte fout
+  * .firebaserc              -- NIEUW
+
+  NOG OPEN
+  * De afgekapte logboekteksten zijn in de export dus onvolledig. Als ik die
+    ooit integraal nodig heb bij een factuur, is Excel gewoon het verkeerde
+    formaat -- dan eerder een aparte tekstbijlage per werkmoment.
+
+WAT IK GELEERD HEB
+  * Mijn test dekte de vorm van de data maar niet de OMVANG. "lange tekst" als
+    testwaarde voor een veld waar ik in werkelijkheid 100.000 tekens in plak, is
+    geen test maar een illustratie. Bij een veld zonder lengtebegrenzing hoort de
+    vraag: wat is realistisch het langste dat hierin komt, en waar botst dat?
+  * Een catch die de fout wegslikt kost meer tijd dan hij bespaart. Ik heb een
+    half uur zitten uitsluiten (bundeling, chunks, content-types) wat de app me
+    in één regel had kunnen vertellen. Toon de echte foutboodschap, altijd.
+  * Publiek leesbare Firestore-regels zijn hier een diagnostisch cadeau: ik kon
+    de echte productiedata ophalen zonder in te loggen en de bug lokaal exact
+    reproduceren. Dat het zo makkelijk ging, is meteen ook de reden om nog eens
+    na te denken over die "allow read: if true".
+  * Een tussenlaag als Excel heeft harde limieten die niets met mijn code te
+    maken hebben. Bij elk exportformaat hoort de vraag welke grenzen het stelt
+    aan wat ik erin duw.
+
+################################################################################
+EINDE 28 augustus 2026 (2) -- Exportfout gevonden, hersteld en live
+################################################################################

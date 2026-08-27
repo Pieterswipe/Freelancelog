@@ -39,6 +39,17 @@ const KOLOMMEN = [
   { kop: "Aangemaakt op", breedte: 18, soort: "datumtijd" },
 ];
 
+// Excel staat maximaal 32.767 tekens per cel toe; SheetJS gooit erboven een
+// harde fout. Lange logboekteksten moeten dus afgekapt worden.
+const MAX_CELTEKST = 32767;
+
+/** Kapt te lange tekst af en zegt in de cel zelf dat er iets weg is. */
+function beperkTekst(waarde) {
+  if (typeof waarde !== "string" || waarde.length <= MAX_CELTEKST) return waarde;
+  const staart = `\n\n[… afgekapt — volledige tekst is ${waarde.length.toLocaleString("nl-BE")} tekens, Excel laat er maar ${MAX_CELTEKST.toLocaleString("nl-BE")} toe]`;
+  return waarde.slice(0, MAX_CELTEKST - staart.length) + staart;
+}
+
 function formatDuur(min) {
   if (!min || min <= 0) return "";
   return `${Math.floor(min / 60)}u ${String(min % 60).padStart(2, "0")}m`;
@@ -88,7 +99,7 @@ function maakRij(log) {
     log.externalReference?.label || "",
     log.externalReference?.url || "",
     naarDatumTijd(log.createdAt),
-  ];
+  ].map(beperkTekst); // laat datums en getallen ongemoeid
 }
 
 /** Zet het juiste getal-/datumformaat op de datakolommen. */

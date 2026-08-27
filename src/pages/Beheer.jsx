@@ -76,8 +76,11 @@ export default function Beheer() {
     setExportBezig(true);
     try {
       await exporteerWerkmomenten(logs);
-    } catch {
-      setExportFout("Het Excel-bestand kon niet aangemaakt worden. Probeer opnieuw.");
+    } catch (fout) {
+      // Toon de echte oorzaak: een generieke melding maakt het onmogelijk
+      // om te zien wat er scheelt.
+      console.error("Excel-export mislukt:", fout);
+      setExportFout(`Het Excel-bestand kon niet aangemaakt worden: ${fout?.message || fout}`);
     } finally {
       setExportBezig(false);
     }
